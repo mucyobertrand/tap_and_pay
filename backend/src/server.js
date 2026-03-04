@@ -6,6 +6,7 @@ const path = require('path');
 const http = require('http');
 const { Server } = require('socket.io');
 const bcrypt = require('bcrypt');
+const session = require('express-session');
 
 const app = express();
 const server = http.createServer(app);
@@ -13,6 +14,21 @@ const io = new Server(server);
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../../frontend')));
+app.use(session({
+    secret: 'tappay-secret-key-2024',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { secure: false, maxAge: 24 * 60 * 60 * 1000 } // 24 hours
+}));
+
+// Authentication middleware
+function requireAuth(req, res, next) {
+    if (req.session.userId) {
+        next();
+    } else {
+        res.redirect('/login.html');
+    }
+}
 
 const TEAM_ID = "team-cr7"; 
 let db;
@@ -35,9 +51,15 @@ let db;
             CREATE TABLE IF NOT EXISTS transactions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 uid TEXT,
-                type TEXT, -- This was the missing column
+                type TEXT,
                 amount REAL,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             );
         `);
         console.log("✓ Database Connected & Tables Verified");
@@ -154,4 +176,79 @@ app.post('/api/pay', async (req, res) => {
         console.error("Payment Error:", err.message);
         res.status(500).json({ error: err.message });
     }
+});
+
+// Authentication Routes
+app.post('/api/login', async (req, res) => {
+    const { username, password } = req.body;
+    
+    try {
+        const user = await db.get('SELECT * FROM users WHERE username = ?', [username]);
+        if (!user) {
+            return res.status(401).json({ error: "Invalid credentials" });
+        }
+
+        const match = await bcrypt.compare(password, user.password);
+        if (!match) {
+            return res.status(401).json({ error: "Invalid credentials" });
+        }
+
+        req.session.userId = user.id;
+        req.session.username = user.username;
+        
+        res.json({ success: true, username: user.username });
+    } catch (err) {
+        console.error("Login Error:", err.message);
+        res.status(500).json({ error: "Login failed" });
+    }
+});
+
+app.post('/api/logout', (req, res) => {
+    req.session.destroy((err) => {
+        if (err) {
+            return res.status(500).json({ error: "Logout failed" });
+        }
+        res.json({ success: true });
+    });
+});
+
+app.get('/api/check-auth', (req, res) => {
+    if (req.session.userId) {
+        res.json({ authenticated: true, username: req.session.username });
+    } else {
+        res.json({ authenticated: false });
+    }
+});
+
+app.post('/api/register-user', async (req, res) => {
+    const { username, password } = req.body;
+    
+    try {
+        const existingUser = await db.get('SELECT * FROM users WHERE username = ?', [username]);
+        if (existingUser) {
+            return res.status(400).json({ error: "Username already exists" });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+        
+        await db.run(
+            'INSERT INTO users (username, password) VALUES (?, ?)', 
+            [username, hashedPassword]
+        );
+        
+        res.json({ success: true });
+    } catch (err) {
+        console.error("User Registration Error:", err.message);
+        res.status(500).json({ error: "Registration failed" });
+    }
+});
+
+// Protect main route - redirect to login if not authenticated
+app.get('/', requireAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, '../../frontend/index.html'));
+});
+
+// Login page route (public)
+app.get('/login.html', (req, res) => {
+    res.sendFile(path.join(__dirname, '../../frontend/login.html'));
 });
