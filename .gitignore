@@ -5,8 +5,6 @@ backend/package-lock.json
 backend/*.log
 
 # Environment
-.env
-.env.local
 
 # Logs
 logs/
@@ -14,7 +12,6 @@ logs/
 npm-debug.log*
 
 # Editor
-.vscode/
 .idea/
 *.swp
 *~
@@ -27,3 +24,5 @@ Thumbs.db
 *.bin
 *.elf
 *.hex
+config.bat
+node_modules

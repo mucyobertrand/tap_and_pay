@@ -51,6 +51,6 @@ frontend/index.html      - Single-page dashboard with Socket.IO
 
 **Team ID**: `team-cr7`
 
-(http://157.173.101.159:9230)
+(http://157.173.101.159:8230)
 
  
